@@ -219,6 +219,11 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
-# macOD
+# macOS
 .DS_Store
 **/.DS_Store
+
+# Project files
+welddb/
+Sujet-soudures
+Sujet-soudures.pdf
