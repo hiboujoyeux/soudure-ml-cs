@@ -44,6 +44,9 @@ CATEGORICAL = PROCESS_CAT + ["weld_id"]
 # SAA (submerged arc automatic) est rattaché à SA.
 WELD_TYPE_ALIASES = {"ShMA": "MMA", "SAA": "SA"}
 
+# Variantes d'écriture d'une même source (faute de frappe, partie II d'un article)
+PUBLICATION_ALIASES = {"KocakPEv-TiN-1994": "KocakPREv-TiN-1994", "Ga&K-1975": "Gar&K-1975"}
+
 
 def _parse_number(value):
     """Convertit une cellule brute en (valeur, est_sous_seuil).
@@ -75,10 +78,14 @@ def publication_of(weld_id):
     (et souvent d'une même soudure) sont très corrélées : il faut en tenir compte
     lors de la validation croisée.
     """
-    m = re.match(r"^(.*?\d{4})", weld_id)
+    if weld_id.startswith("EvansLetter"):
+        return "EvansLetter"
+    m = re.match(r"^p\d+-(RR\d+)", weld_id)  # pages d'un même rapport
     if m:
         return m.group(1)
-    return re.split(r"[-\s]", weld_id)[0]
+    m = re.match(r"^(.*?\d{4})", weld_id)
+    pub = m.group(1) if m else re.split(r"[-\s]", weld_id)[0]
+    return PUBLICATION_ALIASES.get(pub, pub)
 
 
 def load_raw(path=DATA_PATH):
