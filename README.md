@@ -18,7 +18,8 @@ le savoir expert et découvrir de nouvelles tendances.
 Base publique **welddb** de l'Université de Cambridge (Cool & Bhadeshia, 1996-1997), à
 placer dans `welddb/` (voir [Installation](#installation-et-exécution)) :
 
-- **1 652 soudures** (métal fondu déposé), **44 colonnes**, issues de **46 publications** ;
+- **1 652 lignes** (métal fondu déposé ; une même soudure apparaît souvent sur plusieurs
+  lignes, une par essai), **44 colonnes**, issues de **46 publications** ;
 - **entrées (la recette)** : 21 éléments chimiques (en % massique ou en ppm), courant,
   tension, type de courant et polarité, apport de chaleur, température entre passes, procédé
   de soudage, traitement thermique après soudage (température, durée) ;
@@ -57,9 +58,13 @@ Erreurs mesurées sur des **publications jamais vues** pendant l'entraînement (
 | Gradient boosting | **63 MPa, R² 0,50** | 47 J, R² 0,00 |
 
 - **Approche retenue : un SVR par propriété.** C'est le seul modèle qui se comporte bien sur
-  les deux cibles. Pour la ténacité, il est significativement meilleur que la forêt
-  aléatoire et le gradient boosting (bootstrap). Pour la limite d'élasticité, les trois
-  meilleurs modèles ne se distinguent pas significativement.
+  les deux cibles. Pour la ténacité, il bat la forêt aléatoire et le gradient boosting sur
+  chacun des 5 plis, mais cet écart n'est pas statistiquement établi après correction pour
+  comparaisons multiples (Wilcoxon et bootstrap sur les publications, corrigés par Holm) :
+  environ la moitié de son avance vient d'une seule publication (Evans-StressRelief-1991).
+  Il ne bat pas non plus significativement la référence « température d'essai seule ».
+  Pour la limite d'élasticité, les trois meilleurs modèles ne se distinguent pas
+  significativement.
 - **Pour présélectionner des recettes sur la limite d'élasticité, le gradient boosting est
   préférable** : avec une marge d'environ 50 MPa, il accepte environ 10 % des soudures trop
   faibles et rejette 30 % des bonnes, contre 16 % et 52 % pour le SVR.

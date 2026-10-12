@@ -31,7 +31,8 @@ Sommaire :
 | **Gradient boosting** | **62,9 ± 7,3** | **46,1** | **0,50** |
 
 - **Le gradient boosting est le meilleur en moyenne**, avec le RMSE le plus régulier d'un
-  pli à l'autre. Il gagne 3 plis sur 5 face au SVR comme face à la forêt. La validation
+  pli à l'autre. Il gagne 3 plis sur 5 face au SVR, et 3 face à la forêt (plus une égalité
+  à 0,05 MPa près et une défaite). La validation
   retient toujours des arbres très simples (profondeur 2). L'écart n'est pas significatif
   (section 4.3).
 - **SVR et forêt aléatoire sont à égalité** : la forêt gagne 3 plis sur 5, le SVR 2, avec des
@@ -187,6 +188,13 @@ Sans marge :
   précaution, ils acceptent une grande partie des soudures trop faibles.
 - **L'AUC** mesure la capacité à classer les soudures, quelle que soit la marge : le
   gradient boosting est le meilleur pour la limite d'élasticité, le SVR pour le Charpy.
+- **Pour le Charpy, ces métriques sont en partie gonflées par les lignes « énergie fixée »** :
+  118 des 244 soudures non conformes sont des lignes à 28 J, non conformes par construction.
+  Sur les seules énergies mesurées, l'AUC devient 0,76 pour le SVR, 0,68 pour la forêt, 0,63
+  pour le gradient boosting et 0,69 pour la température seule : le classement des modèles
+  ne change pas, mais leur capacité réelle à repérer les soudures fragiles est plus faible.
+  De plus, le critère « 47 J à la température d'essai » mélange des essais faits à des
+  températures différentes, alors qu'un cahier des charges fixe une température.
 
 Avec une **marge de sécurité** choisie en validation croisée groupée par publication (voir
 [méthodologie §6](methodologie.md#6-métriques)), pour viser au plus 10 % de fausse
@@ -224,7 +232,7 @@ publication pèse autant), avec correction de Holm pour les six comparaisons :
 **Aucun écart ne résiste à la correction pour comparaisons multiples.**
 
 **Bootstrap sur les publications** (intervalle de confiance à 95 % ; chaque ligne pèse
-autant) :
+autant ; p-valeurs corrigées par Holm pour les six comparaisons, comme pour le Wilcoxon) :
 
 | | RMSE (toutes les lignes) | IC 95 % |
 |---|---|---|
@@ -236,24 +244,30 @@ autant) :
 | Charpy : forêt aléatoire | 46,0 J | 35,7 – 55,9 |
 | Charpy : gradient boosting | 47,1 J | 37,3 – 57,2 |
 
-| Écart de RMSE (A − B) | Écart | IC 95 % | Significatif |
-|---|---|---|---|
-| Re : SVR − forêt | −0,7 MPa | −9,4 – 6,8 | non |
-| Re : gradient boosting − SVR | −4,3 MPa | −12,7 – 5,7 | non |
-| Re : gradient boosting − forêt | −5,0 MPa | −10,9 – 0,4 | non |
-| Charpy : SVR − forêt | −5,7 J | −11,4 – −0,3 | **oui** |
-| Charpy : SVR − gradient boosting | −6,8 J | −13,5 – −0,8 | **oui** |
-| Charpy : SVR − température seule | −5,2 J | −12,8 – 1,9 | non |
+| Écart de RMSE (A − B) | Écart | IC 95 % | p-valeur | p corrigée (Holm) |
+|---|---|---|---|---|
+| Re : SVR − forêt | −0,7 MPa | −9,4 – 6,8 | 0,84 | 0,84 |
+| Re : gradient boosting − SVR | −4,3 MPa | −12,7 – 5,7 | 0,36 | 0,73 |
+| Re : gradient boosting − forêt | −5,0 MPa | −10,9 – 0,4 | 0,07 | 0,27 |
+| Charpy : SVR − forêt | −5,7 J | −11,4 – −0,3 | 0,035 | 0,18 |
+| Charpy : SVR − gradient boosting | −6,8 J | −13,5 – −0,8 | 0,021 | 0,13 |
+| Charpy : SVR − température seule | −5,2 J | −12,8 – 1,9 | 0,16 | 0,47 |
 
 - **Limite d'élasticité** : aucun écart établi entre les trois meilleurs modèles.
-- **Charpy** : le SVR est significativement meilleur que les deux modèles d'arbres d'après
-  le bootstrap, mais pas d'après le Wilcoxon. Les deux méthodes ne pèsent pas les
-  publications de la même façon : une seule publication, Evans-StressRelief-1991
-  (94 lignes), fait environ la moitié de l'avance du SVR. Ses courbes de transition
-  complètes sont mal prédites par les modèles d'arbres, qui y reproduisent le plateau à
-  100 J appris sur les autres publications d'Evans.
+- **Charpy** : sans correction, l'intervalle exclut 0 face aux deux modèles d'arbres, mais
+  ces écarts **ne résistent pas à la correction pour les six comparaisons** (p ≈ 0,18 et
+  0,13), ni au Wilcoxon. Avant correction, les deux méthodes divergent parce qu'elles ne
+  pèsent pas les publications de la même façon : une seule publication,
+  Evans-StressRelief-1991 (94 lignes), fait environ la moitié de l'avance du SVR. Ses
+  courbes de transition complètes sont mal prédites par les modèles d'arbres, qui y
+  reproduisent le plateau à 100 J appris sur les autres publications d'Evans.
+- L'avantage du SVR pour le Charpy est en revanche **régulier** : il bat la forêt et le
+  gradient boosting sur chacun des 5 plis (notebook 04).
 - Le SVR ne bat pas significativement la référence « température seule » : la recette
   n'apporte qu'un gain modeste et incertain pour la ténacité.
+
+**Au total, après correction pour comparaisons multiples, aucun écart entre les meilleurs
+modèles n'est statistiquement établi**, ni par le Wilcoxon ni par le bootstrap.
 
 ### 4.4 Approche retenue
 
@@ -264,8 +278,10 @@ Charpy.
 
 Justification :
 - c'est le seul modèle qui se comporte bien sur les deux cibles ;
-- pour la ténacité, il est le meilleur, significativement devant la forêt et le gradient
-  boosting (bootstrap), et moins sensible qu'eux aux lignes « énergie fixée » ;
+- pour la ténacité, il est le meilleur, devant la forêt et le gradient boosting sur chacun
+  des 5 plis (6 à 7 J de RMSE en moins), et moins sensible qu'eux aux lignes « énergie
+  fixée ». Cet écart n'est toutefois pas établi statistiquement après correction pour
+  comparaisons multiples ;
 - pour la limite d'élasticité, il ne se distingue pas significativement du gradient boosting
   et de la forêt ;
 - ses effets sont lisses et faciles à interpréter.
@@ -281,24 +297,25 @@ prédit jamais hors de la plage vue. Le semi-supervisé n'est pas retenu (sectio
 
 Effet de chaque variable quand elle passe de sa valeur basse (percentile 5) à sa valeur haute
 (percentile 95), toutes choses égales par ailleurs (dépendance partielle). Énergie Charpy à
-−40 °C.
+−40 °C. Les percentiles sont calculés sur les données de chaque modèle : les plages diffèrent
+donc un peu entre la limite d'élasticité et le Charpy.
 
-| Variable | Plage | Effet sur Re (SVR / forêt) | Effet sur KV à −40 °C (SVR / forêt) |
-|---|---|---|---|
-| Mn | 0,6 → 1,8 % | +111 / +61 MPa | optimum vers 1,1–1,3 % dans les deux modèles |
-| Cr | 0 → 8,9 % | +357 / +110 MPa | −62 / −7 J |
-| Mo | 0 → 1,1 % | +118 / +71 MPa | −12 / −13 J |
-| V | 0 → 0,2 % | +186 / +56 MPa | −23 / −12 J |
-| Nb | 0 → 500 ppm | +104 / +45 MPa | −32 / 0 J |
-| Ni | 0 → 2,3 % | +85 / +44 MPa | −10 / −1 J |
-| C | 0,04 → 0,12 % | +35 / +16 MPa | baisse au-delà de ~0,08 % |
-| Si | 0,18 → 0,55 % | +42 / +19 MPa | −15 / −4 J |
-| O | 230 → 700 ppm | −38 / −5 MPa | **−36 / −13 J** |
-| N | 50 → 370 ppm | +49 / +19 MPa | −4 / −7 J |
-| P | 0,005 → 0,026 % | +21 / +10 MPa | −6 / −7 J |
-| Apport de chaleur | 1 → 4,8 kJ/mm | −34 / −13 MPa | −29 / −1 J |
-| Température entre passes | 150 → 250 °C (Charpy) | effet faible | **+17 / +10 J** |
-| Traitement thermique | 0 → 750 °C | −33 / −6 MPa | +4 / 0 J |
+| Variable | Plage (données Re) | Effet sur Re (SVR / forêt) | Plage (données Charpy) | Effet sur KV à −40 °C (SVR / forêt) |
+|---|---|---|---|---|
+| Mn | 0,6 → 1,8 % | +111 / +61 MPa | 0,6 → 1,8 % | −2 / +4 J : presque aucun effet ; léger maximum vers 1,1–1,3 % (SVR), plateau au-delà de ~1,2 % (forêt) |
+| Cr | 0 → 8,9 % | +357 / +110 MPa | 0 → 9,0 % | −62 / −7 J |
+| Mo | 0 → 1,1 % | +118 / +71 MPa | 0 → 1,1 % | −12 / −13 J |
+| V | 0 → 0,2 % | +186 / +56 MPa | 0 → 0,23 % | −23 / −12 J |
+| Nb | 0 → 500 ppm | +104 / +45 MPa | 5 → 700 ppm | −32 / 0 J |
+| Ni | 0 → 2,3 % | +85 / +44 MPa | 0 → 3,0 % | −10 / −1 J |
+| C | 0,04 → 0,12 % | +35 / +16 MPa | 0,04 → 0,12 % | −2 / −8 J, baisse au-delà de ~0,08 % |
+| Si | 0,18 → 0,55 % | +42 / +19 MPa | 0,14 → 0,45 % | −15 / −4 J |
+| O | 230 → 700 ppm | −38 / −5 MPa | 260 → 740 ppm | **−36 / −13 J** |
+| N | 50 → 370 ppm | +49 / +19 MPa | 50 → 270 ppm | −4 / −7 J |
+| P | 0,005 → 0,026 % | +21 / +10 MPa | 0,005 → 0,024 % | −6 / −7 J |
+| Apport de chaleur | 1 → 4,8 kJ/mm | −34 / −13 MPa | 1 → 4,4 kJ/mm | −29 / −1 J |
+| Température entre passes | 100 → 300 °C | −8 / −4 MPa (faible) | 150 → 250 °C | **+17 / +10 J** |
+| Traitement thermique | 0 → 750 °C | −33 / −6 MPa | 0 → 700 °C | +4 / 0 J |
 
 La forêt aléatoire donne des effets plus faibles, car elle ne prédit jamais au-delà des
 valeurs vues (plateaux). Le sens des effets compte plus que leur valeur exacte.
@@ -306,7 +323,7 @@ valeurs vues (plateaux). Le sens des effets compte plus que leur valeur exacte.
 **Le compromis résistance / ténacité** : Cr, Mo, V et Nb augmentent fortement la résistance
 mais dégradent la ténacité. À l'inverse, l'oxygène et l'apport de chaleur dégradent les deux
 (« perdant-perdant »), et le manganèse augmente la résistance sans pénaliser la ténacité
-jusqu'à environ 1,3 %.
+dans la plage observée.
 
 ## 6. Recommandations
 
@@ -316,7 +333,7 @@ Elles sont classées selon ce que le soudeur ou le responsable soudage contrôle
 
 | Levier | Que faire concrètement | Ce que montrent les modèles | Confiance |
 |---|---|---|---|
-| **Consommable : manganèse** | Choisir une électrode, un fil ou un couple fil/flux donnant **environ 1,0 à 1,4 % de Mn** dans le métal fondu (voir la fiche technique du fabricant) | Résistance en hausse avec Mn ; ténacité maximale vers 1,1–1,3 % | **Forte** : deux modèles d'accord, cohérent avec les travaux d'Evans sur les soudures C-Mn [Evans & Bailey, 1997] |
+| **Consommable : manganèse** | Choisir une électrode, un fil ou un couple fil/flux donnant **environ 1,0 à 1,4 % de Mn** dans le métal fondu (voir la fiche technique du fabricant) | Résistance en hausse avec Mn (deux modèles) ; ténacité presque insensible au Mn dans cette plage (moins de 5 J), légèrement meilleure vers 1,1–1,3 % | **Forte** pour la résistance. Pour la ténacité, l'optimum vers 1–1,4 % vient surtout des travaux d'Evans sur les soudures C-Mn [Evans & Bailey, 1997] ; les modèles le confirment à peine |
 | **Consommable : carbone** | Préférer un métal fondu à **bas carbone (≤ 0,08 %)** | Résistance en hausse avec C, ténacité en baisse au-delà de ~0,08 % | Moyenne |
 | **Consommable : éléments d'alliage** | N'utiliser des consommables alliés au **Cr, Mo, V, Nb** que si le cahier des charges l'exige (haute résistance, tenue à chaud) ; dans ce cas, **prévoir des essais Charpy** | Forte hausse de résistance, perte de ténacité | **Forte** pour Cr, Mo et V ; moyenne pour Nb |
 | **Limiter l'oxygène** | Préférer les **enrobages et flux basiques** aux rutiles ou acides, et un gaz de protection peu oxydant (moins de CO₂/O₂) ; garder une bonne protection gazeuse | L'oxygène dégrade nettement la ténacité | **Forte** : deux modèles d'accord ; les inclusions d'oxydes sont un facteur connu de fragilité [Grong, 1997] |
@@ -352,8 +369,8 @@ vérifiant alors la ténacité.
 - **Ténacité mal prédite** (R² ≈ 0,28) : les recommandations sur la ténacité sont des
   tendances à confirmer.
 - **Incertitude sur les erreurs** : avec 26 à 42 publications indépendantes, les intervalles
-  de confiance des RMSE sont larges (environ ± 11 MPa et ± 8 J), et la plupart des écarts
-  entre les meilleurs modèles ne sont pas significatifs.
+  de confiance des RMSE sont larges (environ ± 11 MPa et ± 8 J), et aucun écart entre les
+  meilleurs modèles n'est significatif après correction pour comparaisons multiples.
 - **Les effets de la section 5 viennent du SVR et de la forêt** : le gradient boosting,
   meilleur pour la présélection sur la limite d'élasticité, n'a pas été utilisé pour
   l'interprétation.

@@ -43,7 +43,7 @@ Le taux de remplissage est très variable :
 |---|---|---|
 | Composition, toujours mesurée | C, Si, Mn, S, P | ~100 % |
 | Procédé | apport de chaleur, température entre passes, type de soudure, traitement thermique | ~100 % |
-| Procédé | courant, tension, AC/DC, polarité | 85 à 90 % |
+| Procédé | courant, tension, AC/DC, polarité | 85 à 91 % |
 | Éléments d'alliage | Ni, Cr, Mo, V, Cu | 35 à 56 % |
 | Éléments en ppm | O, N | ~75 % ; Ti, Al, Nb, B : 30 à 57 % |
 | Presque vides | Co, W, Sn, As, Sb | < 20 % |
@@ -98,8 +98,8 @@ Ce que l'ACP apprend :
 
 | Cas | Exemple | Traitement | Justification |
 |---|---|---|---|
-| Valeur non publiée | `N` | manquante | Indiqué dans `welddb.info` : ce n'est **pas** zéro |
-| Sous la limite de détection | `<0.01`, `<5` | valeur de la limite, plus une colonne indicatrice `<col>_below_dl` | La vraie valeur est entre 0 et la limite ; la limite est une borne supérieure prudente et très proche de 0 |
+| Valeur non publiée | `N` | manquante | Indiqué dans `welddb.info` : « non publié » ne veut **pas** dire zéro en général. On ne décide rien au chargement : l'imputation, qui dépend de la variable (0 pour les éléments d'alliage, médiane sinon), est faite et justifiée au pré-traitement (§4) |
+| Sous la limite de détection | `<0.01`, `<5` | valeur de la limite | La vraie valeur est entre 0 et la limite ; la limite est une borne supérieure prudente et très proche de 0. Une colonne indicatrice `<col>_below_dl` est créée au chargement pour l'analyse descriptive, mais elle n'est pas utilisée comme entrée des modèles |
 | Plage | `150-200` (température entre passes) | milieu de la plage | Meilleure estimation ponctuelle |
 | Dureté annotée | `203(Hv30)`, `224Hv10` | valeur numérique | Toutes en Vickers ; la charge d'essai change peu la valeur |
 | Azote total / résiduel | `66tot33res` | azote total | Cohérent avec les autres lignes, qui donnent l'azote total |
@@ -205,9 +205,12 @@ linéaires peuvent apprendre cet effet de seuil.
 
 [`src/preprocessing.py`]
 
+Les valeurs manquantes sont les `N` (« non publié ») du fichier brut, et les quelques
+valeurs mises en manquant au §2 ; l'imputation dépend de la variable :
+
 | Étape | Traitement | Justification |
 |---|---|---|
-| Ni, Cr, Mo, V, Cu, Ti, Al, B, Nb manquants | **→ 0** | Éléments ajoutés volontairement : non mentionné = non ajouté (§1.2). La teneur résiduelle réelle est faible |
+| Ni, Cr, Mo, V, Cu, Ti, Al, B, Nb manquants | **→ 0** | En général, « non publié » ne veut pas dire zéro (§2.1). Mais ces éléments sont ajoutés volontairement : un auteur ne publie pas la teneur d'un élément qu'il n'a pas ajouté (§1.2), et la teneur résiduelle réelle est faible. Ici, non publié ≈ non ajouté ≈ 0 |
 | C, Si, Mn, S, P, O, N, courant, tension, apport de chaleur, températures, durée manquants | **→ médiane** | Ces éléments sont toujours présents dans une soudure (O, N) ou ces paramètres toujours fixés : 0 n'aurait pas de sens. La médiane est robuste aux valeurs extrêmes |
 | Type de soudure, AC/DC, polarité | **one-hot** ; manquant → catégorie « inconnu » ; catégories de moins de 10 lignes regroupées | Les modèles demandent des nombres. Trop peu de lignes pour apprendre une catégorie rare (GTAA, GMAA : 4 lignes chacune) |
 | Toutes les variables numériques | **standardisation** (moyenne 0, écart-type 1) | Échelles de 10⁻³ à 10³ (§1.3). Sans elle, la distance du k-NN et le noyau du SVR seraient dominés par les variables en ppm ou en ampères |
@@ -276,8 +279,10 @@ toutes deux fondées sur les **publications**, l'unité réellement indépendant
   fois, avec remise, autant de publications qu'il y en a, et on recalcule le RMSE sur toutes
   leurs lignes. Tirer des publications plutôt que des lignes respecte la dépendance entre
   lignes d'une même publication. Pour comparer deux modèles, on calcule l'écart de RMSE sur
-  les mêmes tirages ; il est significatif si son intervalle ne contient pas 0. Ici, chaque
-  ligne pèse autant.
+  les mêmes tirages ; son intervalle ne doit pas contenir 0. Pour les six mêmes
+  comparaisons, on en déduit une p-valeur (deux fois la part des tirages où l'écart change
+  de signe), corrigée elle aussi par la méthode de Holm : sans cette correction, le
+  bootstrap serait plus permissif que le Wilcoxon. Ici, chaque ligne pèse autant.
 
 Les deux méthodes peuvent diverger quand une grande publication pèse sur le résultat : on
 les présente donc ensemble.
@@ -299,7 +304,9 @@ Notations : yᵢ valeur mesurée, ŷᵢ valeur prédite, ȳ moyenne, n nombre de
 | **AUC** (aire sous la courbe ROC) | probabilité qu'une soudure non conforme tirée au hasard ait une prédiction plus basse qu'une soudure conforme tirée au hasard | Capacité à **classer** les soudures, indépendamment du seuil et de la marge : 0,5 = hasard, 1 = parfait |
 
 RMSE, MAE et R² sont calculés pli par pli puis moyennés ; les autres métriques portent sur
-l'ensemble des prédictions hors pli.
+l'ensemble des prédictions hors pli. Le R² d'un pli compare le modèle à la moyenne **du pli
+de test**, inconnue au moment de prédire : c'est pourquoi la référence « moyenne », qui
+prédit la moyenne d'entraînement, a un R² légèrement négatif (−0,06 et −0,18).
 
 **Seuils de conformité** utilisés pour les trois dernières métriques : 420 MPa de limite
 d'élasticité (classe « 42 » de la norme EN ISO 2560-A) et 47 J à la température d'essai. Ils
@@ -380,7 +387,10 @@ Algorithme, sur 5 itérations : entraîner la forêt, prédire les lignes non é
 à l'entraînement les 20 % de prédictions où les arbres sont le plus d'accord, recommencer.
 
 **Évaluation honnête** : même validation groupée par publication ; les lignes non étiquetées
-des publications de test sont exclues. Pour vérifier si le semi-supervisé aide quand les
+des publications de test sont exclues. La forêt garde des hyperparamètres fixes (les plus
+souvent retenus en validation imbriquée : un tiers des variables par nœud, feuilles d'une
+ligne) pour isoler l'effet du semi-supervisé : son témoin supervisé (66,3 MPa) diffère donc
+un peu de la forêt de la comparaison principale (67,5 MPa). Pour vérifier si le semi-supervisé aide quand les
 étiquettes sont rares, l'expérience est répétée avec 100 %, 50 %, 25 % et 10 % des
 étiquettes d'entraînement. Les étiquettes retirées rejoignent alors les données non
 étiquetées.
@@ -418,7 +428,9 @@ prédictions proches (**hypothèse de variété**). La solution est un simple sy
 **Évaluation.** Même validation croisée imbriquée groupée par publication. Hyperparamètres :
 γ ∈ {0,01 ; 0,03}, λ_A ∈ {10⁻⁵ ; 10⁻⁴ ; 10⁻³}, λ_I ∈ {0,01 ; 0,1 ; 1}. Les lignes non
 étiquetées des publications de validation et de test sont exclues à tous les niveaux (ou,
-en transductif, seules leurs recettes sont utilisées, jamais leurs mesures). L'expérience
+en transductif, seules les recettes de la publication évaluée sont utilisées, jamais ses
+mesures) : pendant la validation interne, les recettes du pli de test externe restent
+toujours hors du graphe. L'expérience
 est répétée avec 50 %, 25 % et 10 % des étiquettes, avec γ et λ_A fixés et λ_I variable.
 Enfin, on vérifie directement l'hypothèse de variété : écart de limite d'élasticité entre
 recettes voisines dans le graphe, comparé à deux soudures tirées au hasard.
@@ -458,7 +470,7 @@ graphe) n'auraient alors aucun lien avec une mesure réelle.
 | Fusionner les lignes de même recette | Complexifie la méthodologie ; le risque de fuite est déjà traité par la validation groupée (§2.4) |
 | Validation croisée aléatoire | Sous-estime l'erreur de moitié (§5.1) |
 | ACP comme pré-traitement | 10 composantes pour 80 % de variance : peu de gain, perte d'interprétabilité (§1.4) |
-| Prédire la température de transition (100 J / 28 J) au lieu de l'énergie | N'utiliserait que 474 lignes et 18 publications. La forêt aléatoire y fait un peu mieux (R² ≈ 0,36), mais le SVR y échoue (R² négatif). Ces chiffres viennent d'un essai exploratoire hors notebook |
+| Prédire la température de transition (100 J / 28 J) au lieu de l'énergie | N'utiliserait que 474 lignes et 17 publications. La forêt aléatoire y fait un peu mieux (R² ≈ 0,36), mais le SVR y échoue (R² négatif). Ces chiffres viennent d'un essai exploratoire hors notebook |
 | Retirer les lignes Charpy à « énergie fixée » | Ne reste que 13 publications ; pas de meilleur résultat (R² ≈ 0,1) [`04_charpy.ipynb`] |
 | COREG (co-training de deux k-NN) | Testé hors notebook : gain inférieur à 1 MPa sur une base k-NN déjà faible, et 5 minutes de calcul. Le test date d'avant la correction du regroupement des publications (§1.1) |
 | Lire la marge de sécurité directement sur les taux mesurés | Règle la marge sur les données d'évaluation : taux trop optimistes (§6) |
