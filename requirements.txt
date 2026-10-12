@@ -1,6 +1,7 @@
-pandas
+pandas>=2.2
 numpy
 matplotlib
 seaborn
-scikit-learn
+scipy
+scikit-learn>=1.4
 jupyter

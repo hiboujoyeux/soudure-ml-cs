@@ -61,7 +61,8 @@ n'en a pas ajouté. Cette observation justifie l'imputation par 0 (§4).
 - Procédé en unités physiques : A, V, kJ/mm, °C, heures.
 - Les valeurs vont de 10⁻³ à 10³ : **une standardisation est indispensable** pour l'ACP et
   pour les modèles fondés sur des distances ou des produits scalaires (k-NN, SVR). Elle est
-  inutile, mais sans effet néfaste, pour la forêt aléatoire.
+  inutile, mais sans effet néfaste, pour les modèles d'arbres (forêt aléatoire, gradient
+  boosting).
 - Les éléments d'alliage ont des distributions **très asymétriques** : la plupart des
   soudures sont au carbone-manganèse, quelques-unes sont fortement alliées (jusqu'à 10 % de
   Cr).
@@ -229,7 +230,8 @@ d'une même publication se ressemblent beaucoup (même laboratoire, même protoc
 même soudure mesurée plusieurs fois). Deux constats :
 
 - prédire simplement la moyenne de la publication explique déjà **47 %** de la variance de
-  la limite d'élasticité ;
+  la limite d'élasticité (**44 %** en R² ajusté, qui tient compte des 42 moyennes
+  estimées) ;
 - avec le même modèle (gradient boosting) :
 
 | Découpage de la validation croisée | RMSE |
@@ -258,11 +260,27 @@ Si on choisissait les hyperparamètres d'après le score de test, ce score serai
 
 ### 5.3 Comparaison statistique
 
-Avec seulement 5 plis, comparer des moyennes n'est pas concluant. Pour départager les deux
-meilleurs modèles, on calcule le RMSE **publication par publication** (42 publications pour
-la limite d'élasticité, 26 pour le Charpy) et on applique un **test de Wilcoxon apparié** :
-non paramétrique, adapté aux petits échantillons, sans hypothèse de normalité.
-[`05_comparaison_recommandations.ipynb`]
+[`05_comparaison_recommandations.ipynb`, section 4]
+
+Avec seulement 5 plis, comparer des moyennes n'est pas concluant : l'écart-type entre plis
+est donné à titre indicatif. Les modèles sont comparés par deux méthodes complémentaires,
+toutes deux fondées sur les **publications**, l'unité réellement indépendante :
+
+- **Test de Wilcoxon apparié** sur le RMSE calculé publication par publication
+  (42 publications pour la limite d'élasticité, 26 pour le Charpy) : non paramétrique,
+  adapté aux petits échantillons, sans hypothèse de normalité. Chaque publication pèse
+  autant, quelle que soit sa taille. Six comparaisons sont faites : les p-valeurs sont
+  corrigées par la **méthode de Holm**, sinon le risque de trouver un écart « significatif »
+  par hasard augmente avec le nombre de tests.
+- **Intervalle de confiance à 95 % par bootstrap sur les publications** : on tire 2 000
+  fois, avec remise, autant de publications qu'il y en a, et on recalcule le RMSE sur toutes
+  leurs lignes. Tirer des publications plutôt que des lignes respecte la dépendance entre
+  lignes d'une même publication. Pour comparer deux modèles, on calcule l'écart de RMSE sur
+  les mêmes tirages ; il est significatif si son intervalle ne contient pas 0. Ici, chaque
+  ligne pèse autant.
+
+Les deux méthodes peuvent diverger quand une grande publication pèse sur le résultat : on
+les présente donc ensemble.
 
 ---
 
@@ -278,10 +296,23 @@ Notations : yᵢ valeur mesurée, ŷᵢ valeur prédite, ȳ moyenne, n nombre de
 | **Part dans la tolérance** | part des soudures avec \|yᵢ − ŷᵢ\| ≤ 50 MPa (ou 20 J) | Lecture « métier » simple |
 | **Taux de fausse acceptation** | non conformes prédites conformes / non conformes | **L'erreur dangereuse** : accepter une soudure trop faible |
 | **Taux de faux rejet** | conformes prédites non conformes / conformes | L'erreur coûteuse : refaire ou retester une bonne soudure |
+| **AUC** (aire sous la courbe ROC) | probabilité qu'une soudure non conforme tirée au hasard ait une prédiction plus basse qu'une soudure conforme tirée au hasard | Capacité à **classer** les soudures, indépendamment du seuil et de la marge : 0,5 = hasard, 1 = parfait |
 
-**Seuils de conformité** utilisés pour les deux dernières métriques : 420 MPa de limite
+RMSE, MAE et R² sont calculés pli par pli puis moyennés ; les autres métriques portent sur
+l'ensemble des prédictions hors pli.
+
+**Seuils de conformité** utilisés pour les trois dernières métriques : 420 MPa de limite
 d'élasticité (classe « 42 » de la norme EN ISO 2560-A) et 47 J à la température d'essai. Ils
 servent à illustrer ; un industriel utiliserait ceux de son cahier des charges.
+
+**Marge de sécurité.** Les modèles tirent vers la moyenne et acceptent trop de soudures
+faibles. On n'accepte donc une soudure que si sa prédiction dépasse le seuil d'une certaine
+marge. Cette marge est un réglage : la choisir en regardant les taux mesurés reviendrait à
+la régler sur les données d'évaluation, et donnerait des taux optimistes (pour le SVR sur
+la limite d'élasticité : 10 % de fausse acceptation annoncés, 16 % en réalité). Elle est
+donc choisie **en validation croisée groupée par publication** : pour chaque groupe de
+publications, on retient la plus petite marge donnant au plus 10 % de fausse acceptation sur
+les autres publications, puis on mesure les taux sur ce groupe.
 
 **Pourquoi plusieurs métriques** : elles ne racontent pas la même histoire. Par exemple, pour
 le Charpy, la simple moyenne a la meilleure « part dans la tolérance », parce que beaucoup
@@ -296,7 +327,9 @@ réellement.
 
 ## 7. Modèles
 
-On s'en tient aux quatre méthodes vues en cours.
+On compare les quatre méthodes vues en cours et le gradient boosting d'arbres, la méthode
+d'ensemble de référence sur les données tabulaires (déjà utilisée au notebook 02 pour
+l'importance des variables).
 
 | Modèle | Principe | Hyperparamètres testés | Attendu |
 |---|---|---|---|
@@ -304,31 +337,41 @@ On s'en tient aux quatre méthodes vues en cours.
 | **k plus proches voisins** | moyenne de la cible des k soudures les plus proches | k ∈ {5, 10, 20, 40, 80} ; pondération uniforme ou par la distance | Non linéaire, mais sensible aux variables inutiles |
 | **SVR, noyau gaussien** | régression à vaste marge ; ignore les erreurs inférieures à ε ; non linéaire grâce au noyau | C ∈ {0,1 ; 1 ; 10 ; 100}, γ ∈ {`scale` ; 0,01 ; 0,1}, ε ∈ {0,05 ; 0,2} | Fonction lisse, robuste au bruit |
 | **Forêt aléatoire** | moyenne de 300 arbres appris sur des échantillons bootstrap, avec un tirage aléatoire de variables à chaque nœud | part des variables par nœud ∈ {0,33 ; 0,66 ; 1}, taille minimale des feuilles ∈ {1, 3, 5} | Capte les interactions, ne prédit jamais hors de la plage vue |
+| **Gradient boosting** (GBRT) | somme de 300 petits arbres appris l'un après l'autre, chacun corrigeant les résidus des précédents ; contribution réduite par le taux d'apprentissage ; chaque arbre appris sur 80 % des lignes | taux d'apprentissage ∈ {0,03 ; 0,1}, profondeur maximale ∈ {2, 3, 5} | Capte les interactions ; plus précis que la forêt en général, mais peut sortir de la plage vue (somme de corrections) |
+
+Pour la limite d'élasticité, la validation retient toujours des arbres de profondeur 2 avec
+un taux de 0,1, deux valeurs au bord de la grille : une grille plus large pourrait encore
+améliorer légèrement le gradient boosting.
 
 ---
 
 ## 8. Apprentissage semi-supervisé
 
-[`03_modeles_limite_elasticite.ipynb`, section 5]
+[`03_modeles_limite_elasticite.ipynb`, sections 5 et 6]
 
-### 8.1 Motivation
+### 8.1 Motivation et démarche
 
 872 lignes sur 1 652 n'ont pas de limite d'élasticité, mais leur recette est connue. Le
-semi-supervisé cherche à exploiter ces entrées non étiquetées.
+semi-supervisé cherche à exploiter ces entrées non étiquetées. La démarche se fait en deux
+temps : une méthode simple d'abord (self-training), puis, après avoir compris son échec,
+une méthode plus avancée choisie pour répondre à cet échec (régularisation de variété).
 
 ### 8.2 Méthodes envisagées
 
 | Famille | Principe | Adaptée ici ? |
 |---|---|---|
-| **Self-training** [Yarowsky, 1995 ; Triguero et al., 2015] | Le modèle prédit des pseudo-étiquettes, on ajoute les plus fiables à l'entraînement, on recommence | **Oui** : fonctionne avec n'importe quel régresseur |
+| **Self-training** [Yarowsky, 1995 ; Triguero et al., 2015] | Le modèle prédit des pseudo-étiquettes, on ajoute les plus fiables à l'entraînement, on recommence | **Oui** : fonctionne avec n'importe quel régresseur ; retenue en premier |
+| **Régularisation de variété** (Laplacian RLS) [Belkin et al., 2006] | Régression à noyau pénalisée pour varier doucement le long d'un graphe reliant toutes les recettes | **Oui** : retenue en second (§8.4) |
 | Co-training / COREG [Zhou & Li, 2005] | Deux k-NN s'étiquettent mutuellement | Possible, mais repose sur le k-NN, notre modèle le plus faible |
-| Propagation de labels [Zhu & Ghahramani, 2002] | Diffusion des étiquettes dans un graphe de similarité | Conçue pour la classification |
-| Méthodes profondes | Régularisation de réseaux de neurones | Hors du cadre du cours, peu de données |
+| Co-training à deux vues [Blum & Mitchell, 1998] | Deux modèles sur deux groupes de variables (composition / procédé) | Les deux vues ne sont ni suffisantes ni indépendantes : le procédé seul prédit mal |
+| Propagation de labels [Zhu & Ghahramani, 2002] | Diffusion des étiquettes dans un graphe de similarité | Cas particulier transductif de la régularisation de variété |
+| Méthodes profondes (Mean Teacher, MixMatch…) | Régularisation par cohérence de réseaux de neurones | Hors du cadre du cours, peu de données tabulaires |
 
-### 8.3 Choix : self-training avec forêt aléatoire
+### 8.3 Premier choix : self-training avec forêt aléatoire
 
-- **La forêt aléatoire était le meilleur modèle supervisé** au moment du choix, à égalité
-  avec le SVR.
+- **La forêt aléatoire est, avec le SVR, l'un des meilleurs modèles du cours.** Le gradient
+  boosting, un peu meilleur, ne convient pas ici : ses arbres sont appris les uns à partir
+  des autres, et l'écart entre leurs prédictions ne mesure pas une confiance.
 - **Elle fournit naturellement une mesure de confiance** : l'écart-type des prédictions de
   ses 300 arbres. Des arbres d'accord indiquent une pseudo-étiquette probablement fiable.
 - **Elle est simple à expliquer et à reproduire.**
@@ -346,11 +389,45 @@ des publications de test sont exclues. Pour vérifier si le semi-supervisé aide
 dans un ordre fixe, et le tri utilise un algorithme stable. Sinon, les calculs en parallèle
 introduisent d'infimes écarts numériques qui changent les résultats d'une exécution à l'autre.
 
-### 8.4 Pourquoi ne pas l'appliquer au Charpy
+### 8.4 Second choix : régularisation de variété
+
+**Ce que l'échec du self-training a appris.** Le self-training ajoute des pseudo-étiquettes
+là où le modèle est déjà sûr de lui. Or, sur les 872 lignes non étiquetées, seules 262
+recettes sont absentes des lignes étiquetées, et elles en sont nettement plus loin que les
+lignes étiquetées entre elles (distance médiane au plus proche voisin étiqueté : 2,1 contre
+0,8, entrées standardisées). La difficulté principale est le **changement de domaine** entre
+publications.
+
+**Pourquoi cette méthode.** On cherche f dans l'espace du noyau gaussien K qui minimise :
+
+  (1/l) Σ_{i étiquetés} (yᵢ − f(xᵢ))² + λ_A ‖f‖²_K + (λ_I / n) fᵀ L f
+
+où L est le laplacien normalisé du graphe des 10 plus proches voisins construit sur les
+n recettes, étiquetées ou non. Le dernier terme impose que des recettes voisines aient des
+prédictions proches (**hypothèse de variété**). La solution est un simple système linéaire.
+- elle est **conçue pour la régression** et appartient à la même famille que le SVR ;
+- elle utilise la **géométrie** des recettes non étiquetées, sans pseudo-étiquettes qui
+  renforcent les biais du modèle ;
+- avec **λ_I = 0**, elle redevient une **régression ridge à noyau supervisée** : ce témoin
+  isole exactement l'effet des données non étiquetées ;
+- elle existe en **version transductive** : on ajoute au graphe les recettes des
+  publications de test, sans leurs mesures. C'est réaliste, car les recettes d'une nouvelle
+  campagne sont connues avant les essais, et cette variante vise directement le changement de
+  domaine.
+
+**Évaluation.** Même validation croisée imbriquée groupée par publication. Hyperparamètres :
+γ ∈ {0,01 ; 0,03}, λ_A ∈ {10⁻⁵ ; 10⁻⁴ ; 10⁻³}, λ_I ∈ {0,01 ; 0,1 ; 1}. Les lignes non
+étiquetées des publications de validation et de test sont exclues à tous les niveaux (ou,
+en transductif, seules leurs recettes sont utilisées, jamais leurs mesures). L'expérience
+est répétée avec 50 %, 25 % et 10 % des étiquettes, avec γ et λ_A fixés et λ_I variable.
+Enfin, on vérifie directement l'hypothèse de variété : écart de limite d'élasticité entre
+recettes voisines dans le graphe, comparé à deux soudures tirées au hasard.
+
+### 8.5 Pourquoi ne pas l'appliquer au Charpy
 
 La température d'essai est une entrée du modèle Charpy, et les lignes sans essai Charpy n'en
-ont pas. Il faudrait leur inventer une température : les pseudo-étiquettes n'auraient alors
-aucun lien avec une mesure réelle.
+ont pas. Il faudrait leur inventer une température : les pseudo-étiquettes (ou les points du
+graphe) n'auraient alors aucun lien avec une mesure réelle.
 
 ---
 
@@ -359,7 +436,9 @@ aucun lien avec une mesure réelle.
 [`05_comparaison_recommandations.ipynb`, section 6]
 
 - **Modèles finaux** : SVR entraîné sur toutes les données étiquetées, hyperparamètres choisis
-  par validation croisée groupée ; forêt aléatoire comme modèle de contrôle.
+  par validation croisée groupée ; forêt aléatoire comme modèle de contrôle. La forêt est
+  préférée au gradient boosting pour ce rôle : elle ne prédit jamais hors de la plage vue,
+  ce qui en fait un contrôle prudent.
 - **Dépendance partielle** : on fixe une variable à une valeur pour toutes les soudures, on
   prédit, et on fait la moyenne. On fait varier la valeur entre les **percentiles 5 et 95**
   observés, pour ne pas extrapoler.
@@ -382,6 +461,8 @@ aucun lien avec une mesure réelle.
 | Prédire la température de transition (100 J / 28 J) au lieu de l'énergie | N'utiliserait que 474 lignes et 18 publications. La forêt aléatoire y fait un peu mieux (R² ≈ 0,36), mais le SVR y échoue (R² négatif). Ces chiffres viennent d'un essai exploratoire hors notebook |
 | Retirer les lignes Charpy à « énergie fixée » | Ne reste que 13 publications ; pas de meilleur résultat (R² ≈ 0,1) [`04_charpy.ipynb`] |
 | COREG (co-training de deux k-NN) | Testé hors notebook : gain inférieur à 1 MPa sur une base k-NN déjà faible, et 5 minutes de calcul. Le test date d'avant la correction du regroupement des publications (§1.1) |
+| Lire la marge de sécurité directement sur les taux mesurés | Règle la marge sur les données d'évaluation : taux trop optimistes (§6) |
+| Régression ridge à noyau dans la comparaison principale | Apparue comme témoin de la régularisation de variété (environ 64 MPa, aussi bien que le gradient boosting) ; non ajoutée pour garder la comparaison centrée sur les méthodes du cours et le gradient boosting |
 
 ---
 
@@ -391,6 +472,9 @@ aucun lien avec une mesure réelle.
 - Yarowsky, D. (1995). Unsupervised word sense disambiguation rivaling supervised methods. *ACL*.
 - Zhu, X., & Ghahramani, Z. (2002). Learning from labeled and unlabeled data with label propagation. Technical report CMU-CALD-02-107.
 - Zhou, Z.-H., & Li, M. (2005). Semi-supervised regression with co-training. *IJCAI*.
+- Blum, A., & Mitchell, T. (1998). Combining labeled and unlabeled data with co-training. *COLT*.
+- Belkin, M., Niyogi, P., & Sindhwani, V. (2006). Manifold regularization: A geometric framework for learning from labeled and unlabeled examples. *Journal of Machine Learning Research*, 7.
+- Holm, S. (1979). A simple sequentially rejective multiple test procedure. *Scandinavian Journal of Statistics*, 6(2).
 - Triguero, I., García, S., & Herrera, F. (2015). Self-labeled techniques for semi-supervised learning: taxonomy, software and empirical study. *Knowledge and Information Systems*, 42(2).
 - van Engelen, J. E., & Hoos, H. H. (2020). A survey on semi-supervised learning. *Machine Learning*, 109(2).
 - NF EN ISO 2560 : Produits consommables pour le soudage — Électrodes enrobées pour le soudage manuel à l'arc des aciers non alliés et à grains fins — Classification.

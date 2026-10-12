@@ -2,7 +2,7 @@
 
 Projet de Machine Learning du cours de CentraleSupélec : prédire la qualité d'une soudure à
 partir de sa « recette » (composition chimique, paramètres de soudage, traitement thermique),
-comparer plusieurs méthodes d'apprentissage dont une approche semi-supervisée, et en
+comparer plusieurs méthodes d'apprentissage dont des approches semi-supervisées, et en
 déduire des recommandations pratiques pour bien souder.
 
 ## Contexte
@@ -15,8 +15,8 @@ le savoir expert et découvrir de nouvelles tendances.
 
 ## Les données
 
-Base publique **welddb** de l'Université de Cambridge (Cool & Bhadeshia, 1996-1997),
-fournie dans `welddb/` :
+Base publique **welddb** de l'Université de Cambridge (Cool & Bhadeshia, 1996-1997), à
+placer dans `welddb/` (voir [Installation](#installation-et-exécution)) :
 
 - **1 652 soudures** (métal fondu déposé), **44 colonnes**, issues de **46 publications** ;
 - **entrées (la recette)** : 21 éléments chimiques (en % massique ou en ppm), courant,
@@ -36,13 +36,15 @@ fournie dans `welddb/` :
 | Pré-traitement | 0 pour les éléments d'alliage non renseignés, médiane sinon, encodage one-hot, standardisation, le tout dans un `Pipeline` | [§4](docs/methodologie.md#4-pré-traitement) |
 | ACP | 10 composantes pour 80 % de la variance ; axes « alliage + traitement thermique », « énergie de soudage », « impuretés » ; groupes par publication | [§1.4](docs/methodologie.md#14-acp--développer-une-intuition) |
 | Validation | **Validation croisée imbriquée, groupée par publication** : un découpage aléatoire sous-estime l'erreur de moitié | [§5](docs/methodologie.md#5-protocole-de-validation) |
-| Métriques | RMSE (principale), MAE, R², part dans la tolérance, **taux de fausse acceptation** | [§6](docs/methodologie.md#6-métriques) |
-| Modèles | Régression linéaire, k plus proches voisins, SVR, forêt aléatoire (vus en cours), plus deux références | [§7](docs/methodologie.md#7-modèles) |
-| Semi-supervisé | Self-training avec forêt aléatoire, confiance mesurée par l'accord entre les arbres | [§8](docs/methodologie.md#8-apprentissage-semi-supervisé) |
+| Métriques | RMSE (principale), MAE, R², part dans la tolérance, **taux de fausse acceptation**, AUC ; marge de sécurité choisie en validation croisée | [§6](docs/methodologie.md#6-métriques) |
+| Comparaison statistique | Test de Wilcoxon par publication avec correction de Holm, intervalles de confiance par bootstrap sur les publications | [§5.3](docs/methodologie.md#53-comparaison-statistique) |
+| Modèles | Régression linéaire, k plus proches voisins, SVR, forêt aléatoire (vus en cours), gradient boosting, plus deux références | [§7](docs/methodologie.md#7-modèles) |
+| Semi-supervisé | Self-training avec forêt aléatoire, puis régularisation de variété (Laplacian RLS), inductive et transductive | [§8](docs/methodologie.md#8-apprentissage-semi-supervisé) |
 
 ## Résultats clés
 
-Erreurs mesurées sur des **publications jamais vues** pendant l'entraînement :
+Erreurs mesurées sur des **publications jamais vues** pendant l'entraînement (moyenne des
+5 plis) :
 
 | Modèle | Limite d'élasticité | Résilience Charpy |
 |---|---|---|
@@ -50,14 +52,21 @@ Erreurs mesurées sur des **publications jamais vues** pendant l'entraînement :
 | Température d'essai seule (référence) | — | RMSE 45 J, R² 0,03 |
 | Régression linéaire | 105 MPa, R² −0,41 | 67 J, R² −1,35 |
 | k plus proches voisins | 88 MPa, R² 0,05 | 49 J, R² −0,09 |
-| **SVR (retenu)** | **67 MPa, R² 0,45** | **40 J, R² 0,28** |
+| **SVR (retenu)** | 67 MPa, R² 0,45 | **40 J, R² 0,28** |
 | Forêt aléatoire | 67 MPa, R² 0,44 | 45 J, R² 0,07 |
+| Gradient boosting | **63 MPa, R² 0,50** | 47 J, R² 0,00 |
 
-- **Approche retenue : un SVR par propriété.** Il est au moins aussi bon que la forêt
-  aléatoire, meilleur pour la ténacité et pour l'erreur la plus dangereuse (accepter une
-  soudure trop faible). L'écart n'est cependant pas statistiquement significatif.
+- **Approche retenue : un SVR par propriété.** C'est le seul modèle qui se comporte bien sur
+  les deux cibles. Pour la ténacité, il est significativement meilleur que la forêt
+  aléatoire et le gradient boosting (bootstrap). Pour la limite d'élasticité, les trois
+  meilleurs modèles ne se distinguent pas significativement.
+- **Pour présélectionner des recettes sur la limite d'élasticité, le gradient boosting est
+  préférable** : avec une marge d'environ 50 MPa, il accepte environ 10 % des soudures trop
+  faibles et rejette 30 % des bonnes, contre 16 % et 52 % pour le SVR.
 - **La résistance est bien mieux prédite que la ténacité.**
-- **Le semi-supervisé n'apporte pas de gain** : il est 1 à 2 MPa moins bon que le supervisé.
+- **Le semi-supervisé n'apporte pas de gain**, ni le self-training (1 à 2 MPa moins bon que
+  le supervisé), ni la régularisation de variété, même en voyant les recettes de test. La
+  limite vient du manque de publications variées, pas du manque d'étiquettes.
 - **Usage réaliste** : présélectionner des recettes avant les essais, pas remplacer les essais
   mécaniques.
 - **Recommandations aux soudeurs** : un consommable à environ 1,0–1,4 % de Mn, bas carbone et
@@ -72,18 +81,17 @@ Détails, figures et discussion : [docs/resultats.md](docs/resultats.md).
 ```
 soudure-ml-cs/
 ├── README.md                  ce fichier
-├── Sujet-soudures.pdf         sujet du projet
 ├── requirements.txt           librairies Python
-├── welddb/                    données brutes et leur description (welddb.info)
+├── welddb/                    données brutes et leur description (welddb.info) — non versionné, à télécharger
 ├── src/
 │   ├── welddb.py              chargement, noms de colonnes, conversion du format brut, publication de chaque soudure
 │   └── preprocessing.py       nettoyage complet et pré-traitement (Pipeline scikit-learn)
 ├── notebooks/
 │   ├── 01_analyse_descriptive.ipynb           format, valeurs manquantes, distributions, unités, corrélations, ACP
-│   ├── 02_variables_qualite_strategie.ipynb   variables de qualité, variables influentes, stratégie de prédiction
-│   ├── 03_modeles_limite_elasticite.ipynb     nettoyage, 4 modèles, validation imbriquée, self-training
-│   ├── 04_charpy.ipynb                        même démarche pour la résilience Charpy
-│   └── 05_comparaison_recommandations.ipynb   comparaison globale, choix final, effet des variables, recommandations
+│   ├── 02_variables_qualite_strategie.ipynb   variables de qualité, variables influentes, effet publication, stratégie
+│   ├── 03_modeles_limite_elasticite.ipynb     5 modèles, validation imbriquée, self-training, régularisation de variété
+│   ├── 04_charpy.ipynb                        même démarche pour la résilience Charpy, courbes de transition
+│   └── 05_comparaison_recommandations.ipynb   comparaison globale, tests statistiques, marges, choix final, recommandations
 ├── results/                   scores et prédictions hors pli (produits par 03 et 04, lus par 05)
 └── docs/
     ├── methodologie.md        tous les choix et leurs justifications
@@ -99,13 +107,19 @@ pip install -r requirements.txt
 jupyter notebook notebooks/
 ```
 
+Les données ne sont pas versionnées. Télécharger les fichiers `welddb.data` et
+`welddb.info` depuis la page
+[MAP_DATA_WELD](https://www.phase-trans.msm.cam.ac.uk/map/data/materials/welddb-b.html) et
+les placer dans `welddb/`, à la racine du dépôt.
+
 Exécuter les notebooks **dans l'ordre** (01 → 05) : le 05 lit les résultats enregistrés par
-le 03 et le 04 dans `results/`. Temps d'exécution : environ 1 à 2 minutes pour chacun des
-notebooks 03 et 04, quelques secondes à 1 minute pour les autres. Tous les résultats sont
+le 03 et le 04 dans `results/`. Temps d'exécution : environ 2 à 3 minutes pour le notebook 03,
+1 minute pour le 04, quelques secondes à 1 minute pour les autres. Tous les résultats sont
 reproductibles (graines aléatoires fixées).
 
 ## Références principales
 
 - Cool, T., Bhadeshia, H. K. D. H., & MacKay, D. J. C. (1997). The yield and ultimate tensile strength of steel welds. *Materials Science and Engineering A*, 223.
+- Belkin, M., Niyogi, P., & Sindhwani, V. (2006). Manifold regularization: A geometric framework for learning from labeled and unlabeled examples. *Journal of Machine Learning Research*, 7.
 - Données : [MAP_DATA_WELD, Phase Transformations Group, University of Cambridge](https://www.phase-trans.msm.cam.ac.uk/map/data/materials/welddb-b.html).
 - Les autres références (semi-supervisé, métallurgie du soudage, normes) sont listées dans [docs/methodologie.md](docs/methodologie.md#références) et [docs/resultats.md](docs/resultats.md#références).
